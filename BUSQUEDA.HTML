@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESTADO DE AFILIACIONES ARI</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <style>
+        body {
+            background-color: #F4F0ED;
+            font-family: 'Alliance Platt Light', sans-serif;
+        }
+        .title-container {
+            background-color: #C5FF00;
+            border-radius: 15px;
+            padding: 10px;
+            text-align: center;
+            margin: 20px;
+        }
+        h1 {
+            color: #163005;
+            margin: 0;
+        }
+        #fileInputLabel {
+            background-color: #163005;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            display: inline-block;
+        }
+        #fileInput {
+            display: none;
+        }
+        #fileName {
+            margin-left: 10px;
+            font-size: 1.2em;
+            vertical-align: middle;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 10px;
+            text-align: center;
+        }
+        th {
+            background-color: #163005;
+            color: white;
+        }
+        td {
+            border: 1px solid #ddd;
+        }
+        #logo {
+            float: right;
+            margin-right: 20px;
+            width: 100px;
+        }
+        #searchLabel {
+            font-size: 1.2em;
+        }
+        #searchInput {
+            font-size: 1.2em;
+            width: 400px;
+        }
+    </style>
+</head>
+<body>
+    <img src="ruta/del/logo/LOGO ARI.png" id="logo" alt="Logo ARI">
+    <div class="title-container">
+        <h1>ESTADO DE AFILIACIONES ARI</h1>
+    </div>
+    <label for="fileInput" id="fileInputLabel">Subir archivo excel</label>
+    <input type="file" id="fileInput" />
+    <span id="fileName"></span>
+    <br/><br/>
+    <label for="searchInput" id="searchLabel">Buscar por RUC, Razón Social o Código de comercio:</label>
+    <input type="text" id="searchInput" oninput="search()" />
+    <br/><br/>
+    <div id="results"></div>
+
+    <script>
+        let workbook;
+        const filePath = 'C:\\ESTADO DE AFILIACIONES\\archivo.xlsx'; // Ruta del archivo en el servidor
+
+        document.getElementById('fileInput').addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                document.getElementById('fileName').textContent = file.name;
+                const reader = new FileReader();
+                
+                reader.onload = (e) => {
+                    const data = new Uint8Array(e.target.result);
+                    workbook = XLSX.read(data, { type: 'array' });
+                    saveFile(file); // Guarda el archivo en el servidor
+                };
+                
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        function saveFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            fetch('/upload', { // Ruta del endpoint para cargar el archivo en el servidor
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Archivo cargado exitosamente');
+                } else {
+                    alert('Error al cargar el archivo');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error al cargar el archivo');
+            });
+        }
+
+        function loadFile() {
+            fetch('/download', { // Ruta del endpoint para obtener el archivo desde el servidor
+                method: 'GET'
+            })
+            .then(response => response.arrayBuffer())
+            .then(data => {
+                const uint8Array = new Uint8Array(data);
+                workbook = XLSX.read(uint8Array, { type: 'array' });
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error al cargar el archivo');
+            });
+        }
+
+        function search() {
+            const searchInput = document.getElementById('searchInput').value.trim().toLowerCase();
+            if (!workbook || searchInput === '') {
+                document.getElementById('results').innerHTML = '';
+                return;
+            }
+
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const data = XLSX.utils.sheet_to_json(worksheet);
+
+            console.log("Datos leídos del archivo:", data);
+
+           const results = data.filter(row => 
+                (row.RUC && row.RUC.toString().toLowerCase().includes(searchInput)) || 
+                (row['RAZON SOCIAL'] && row['RAZON SOCIAL'].toLowerCase().includes(searchInput)) || 
+                (row['CODIGO'] && row['CODIGO'].toString().toLowerCase().includes(searchInput))
+            );
+
+            displayResults(results);
+        }
+
+        function formatDate(dateString) {
+            let date;
+            if (typeof dateString === 'number') {
+                date = new Date((dateString - (25567 + 2)) * 86400 * 1000);
+            } else {
+                date = new Date(dateString);
+            }
+
+            if (isNaN(date)) {
+                return '';
+            }
+
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}/${month}/${year}`;
+        }
+
+        function displayResults(results) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+
+            if (results.length === 0) {
+                resultsDiv.innerHTML = '<p>No se encontraron resultados</p>';
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.border = '1';
+
+            const headerRow = document.createElement('tr');
+            const headers = ['TIPO VENTA','RUC', 'RAZON SOCIAL', 'CODIGO', 'FECHA DE CREACIÓN', 'VENDEDOR', 'ESTADO MIGRACIÓN', 'DETALLE MIGRACIÓN', 'ESTADO SVA', 'ESTADO DE AFILIACIÓN'];
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.innerText = header;
+                headerRow.appendChild(th);
+            });
+            table.appendChild(headerRow);
+
+            results.forEach(result => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
+                    const td = document.createElement('td');
+                    if (header === 'FECHA DE CREACIÓN') {
+                        td.innerText = result[header] ? formatDate(result[header]) : '';
+                    } else {
+                        td.innerText = result[header] || '';
+                    }
+                    row.appendChild(td);
+                });
+                table.appendChild(row);
+            });
+
+            resultsDiv.appendChild(table);
+        }
+
+        // Cargar el archivo automáticamente cuando se carga la página
+        window.onload = loadFile;
+    </script>
+</body>
+</html>
+
+
